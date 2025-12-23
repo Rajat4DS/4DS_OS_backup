@@ -1,0 +1,132 @@
+[filament_switch_sensor runout_sensor_e0]
+switch_pin: ^PG12 # Extruder:PB7
+pause_on_runout: False
+event_delay: 3.0
+pause_delay: 0.5
+runout_gcode: CHECK_AND_AUTO_SWAP_E0
+#insert_gcode: {action_respond_info("RUNOUT: T0 Filament inserted")}
+#runout_gcode: AUTO_SWAP_TO_E1
+
+[filament_switch_sensor runout_sensor_e1]
+switch_pin: PG13 #Extruder1:PD3
+pause_on_runout: False
+event_delay: 3.0
+pause_delay: 0.5
+runout_gcode: CHECK_AND_AUTO_SWAP_E1
+#insert_gcode: {action_respond_info("RUNOUT1: T1 Filament inserted")}
+#runout_gcode: AUTO_SWAP_TO_E0
+
+[gcode_macro CHECK_AND_AUTO_SWAP_E0]
+description: Runout on E0 → check if E1 has filament
+gcode:
+    {% if printer["filament_switch_sensor runout_sensor_e1"].filament_detected %}
+        M118 [AUTO_SWAP] Filament detected on E1 — auto swapping...
+        AUTO_SWAP_TO_E1
+    {% else %}
+        M118 [RUNOUT] No filament in E1 — pausing print.
+        M117 E0 filament runout! Load filament.
+        PAUSE
+    {% endif %}
+
+
+[gcode_macro CHECK_AND_AUTO_SWAP_E1]
+description: Runout on E1 → check if E0 has filament
+gcode:
+    {% if printer["filament_switch_sensor runout_sensor_e0"].filament_detected %}
+        M118 [AUTO_SWAP] Filament detected on E0 — auto swapping...
+        AUTO_SWAP_TO_E0
+    {% else %}
+        M118 [RUNOUT] No filament in E0 — pausing print.
+        M117 E1 filament runout! Load filament.
+        PAUSE
+    {% endif %}
+
+
+[gcode_macro AUTO_SWAP_TO_E1]
+description: Switch from E0 to E1 automatically
+gcode:
+    _AUTO_SWAP FROM=extruder TO=extruder1 TOOL=T1
+   
+[gcode_macro AUTO_SWAP_TO_E0]
+description: Switch from E1 to E0 automatically
+gcode:
+    _AUTO_SWAP FROM=extruder1 TO=extruder TOOL=T0
+
+
+# --- Save current E value ---
+[gcode_macro SAVE_E]
+description: Save current extruder position to variable
+gcode:
+    {% set e = printer.gcode_move.position.e %}
+    SAVE_VARIABLE VARIABLE=e_value VALUE={e}
+    M118 [SAVE_E] Saved E={e}
+
+# --- Restore E value after tool swap ---
+[gcode_macro RESTORE_E]
+description: Restore previously saved extruder position
+gcode:
+    {% set e = printer.save_variables.variables.e_value|default(0)|float %}
+    G92 E{e}
+    M118 [RESTORE_E] Restored E={e}
+
+
+
+
+[gcode_macro _AUTO_SWAP]
+description: Safe filament auto swap without E jump
+gcode:
+    {% set FROM = params.FROM %}
+    {% set TO   = params.TO %}
+    {% set TOOL = params.TOOL %}
+
+    M400
+    M117 Auto-swap in progress...
+
+    {% set pos = printer.toolhead.position %}
+    {% set x = pos.x %}
+    {% set y = pos.y %}
+    {% set z = pos.z %}
+    {% set abs_xy = printer.gcode_move.absolute_coordinates %}
+    {% set abs_e  = printer.gcode_move.extrude_absolute %}
+
+    M118 [AUTO_SWAP] Switching {FROM} → {TO}
+
+    # --- SAFE RETRACT ---
+    M83
+    G1 E-2 F1800
+    G1 Z5 F1200
+
+    # --- TOOL CHANGE ---
+    {TOOL}
+
+    # --- HEATER HANDOVER ---
+    {% set temp = printer[FROM].target|float %}
+    {% if temp <= 0 %}
+        {% set temp = printer[FROM].temperature|float %}
+    {% endif %}
+
+    SET_HEATER_TEMPERATURE HEATER={TO} TARGET={temp}
+    TEMPERATURE_WAIT SENSOR={TO} MINIMUM={temp-1}
+
+    SET_HEATER_TEMPERATURE HEATER={FROM} TARGET=0
+
+    # --- RESET EXTRUSION SAFELY ---
+    M83
+    G1 E0.6 F300
+    G92 E0
+
+    {% if abs_e %}
+        M82
+    {% endif %}
+
+    # --- POSITION RESTORE ---
+    {% if abs_xy %}
+        G90
+    {% else %}
+        G91
+    {% endif %}
+
+    G0 X{x} Y{y} F12000
+    G0 Z{z} F1200
+
+    M118 [AUTO_SWAP] Swap complete → {TO}
