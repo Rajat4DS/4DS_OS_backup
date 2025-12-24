@@ -1,0 +1,111 @@
+[gcode_macro PURGE_AND_CLEAN]
+description: Purge or wipe nozzle safely WITHOUT changing final Z (big machine)
+
+gcode:
+    {% set mode = params.MODE|default("PURGE")|upper %}
+    {% set active_extruder = printer.toolhead.extruder %}
+
+    # Define purge & brush positions (big machine)
+    {% if active_extruder == "extruder" %}
+        {% set tool = "T0" %}
+        {% set purge_x = -43 %}
+        {% set purge_y = 150 %}
+        {% set brush_x = -44 %}
+        {% set brush_y = 310 %}
+    {% elif active_extruder == "extruder1" %}
+        {% set tool = "T1" %}
+        {% set purge_x = 533 %}
+        {% set purge_y = 150 %}
+        {% set brush_x = 535 %}
+        {% set brush_y = 310 %}
+    {% else %}
+        {action_respond_info("No active extruder — skipping")}
+        RETURN
+    {% endif %}
+
+    # Save original Z height
+    {% set saved_z = printer.toolhead.position.z %}
+
+    # Parameters
+    {% set wipes = params.WIPES|default(5)|int %}
+    {% set purge_len = params.PURGE_LEN|default(20)|float %}
+
+    {action_respond_info("Nozzle clean start. Tool=" ~ tool ~ " Saved Z=" ~ saved_z)}
+
+    # Lift nozzle for cleaning (same concept as earlier)
+    G91
+    G1 Z5 F600
+    G90
+
+    # Set working Z for purge/wipe (saved_z + 5)
+    {% set work_z = saved_z + 5 %}
+
+    # PURGE at start
+    {% if mode == "PURGE" %}
+        G1 X{purge_x} Y{purge_y} F9000
+        G1 Z{work_z} F600
+        G92 E0
+        M83
+        G1 E{purge_len} F200
+        G1 E-1 F500
+    {% endif %}
+
+    # WIPE on brush
+    G1 X{brush_x} Y{brush_y} F9000
+    G1 Z{work_z} F600
+    {% for i in range(wipes) %}
+        G1 Y{brush_y + 60} F9000
+        G1 Y{brush_y} F9000
+    {% endfor %}
+
+    # Restore original Z
+    G1 Z{saved_z} F9000
+
+
+[gcode_macro WIPE_ONLY]
+description: Wipe nozzle on brush safely WITHOUT purge (big machine, same Z logic)
+
+gcode:
+    {% set active_extruder = printer.toolhead.extruder %}
+
+    # Brush positions (big machine)
+    {% if active_extruder == "extruder" %}
+        {% set tool = "T0" %}
+        {% set brush_x = -44 %}
+        {% set brush_y = 310 %}
+    {% elif active_extruder == "extruder1" %}
+        {% set tool = "T1" %}
+        {% set brush_x = 535 %}
+        {% set brush_y = 310 %}
+    {% else %}
+        {action_respond_info("No active extruder — skipping wipe")}
+        RETURN
+    {% endif %}
+
+    # Save original Z
+    {% set saved_z = printer.toolhead.position.z %}
+    {% set work_z  = saved_z + 5 %}
+
+    {% set wipes  = params.WIPES|default(5)|int %}
+    {% set stroke = 60.0 %}
+
+    {action_respond_info("Nozzle wiping start for " ~ tool ~ " at saved Z=" ~ saved_z)}
+
+    SAVE_GCODE_STATE NAME=wipe_state
+    M83
+    G92 E0
+
+    # Move to brush at working Z
+    G1 X{brush_x} Y{brush_y} F9000
+    G1 Z{work_z} F600
+
+    # Wipe strokes
+    {% for i in range(wipes) %}
+        G1 Y{brush_y + stroke} F12000
+        G1 Y{brush_y} F12000
+    {% endfor %}
+
+    # Restore original Z
+    G1 Z{saved_z} F9000
+
+    RESTORE_GCODE_STATE NAME=wipe_state MOVE=0
