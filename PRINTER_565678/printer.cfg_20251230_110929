@@ -1,0 +1,864 @@
+#12346789101
+# This file contains common pin mappings for the BigTreeTech Octopus
+# and Octopus Pro boards. To use this config, start by identifying the
+# micro-controller on the board - it may be an STM32F446, STM32F429,
+# or an STM32H723.  Select the appropriate micro-controller in "make
+# menuconfig" and select "Enable low-level configuration options". For
+# STM32F446 boards the firmware should be compiled with a "32KiB
+# bootloader" and a "12MHz crystal" clock reference. For STM32F429
+# boards use a "32KiB bootloader" and an "8MHz crystal". For STM32H723
+# boards use a "128KiB bootloader" and a "25Mhz crystal".
+# See docs/Config_Reference.md for a description of parameters.
+
+[include mainsail.cfg]
+
+[include timelapse.cfg]
+
+[include autoswap.cfg]
+
+
+[include save_variables.cfg]
+   
+#[include ADXL.cfg]
+[input_shaper]
+#shaper_type_x = mzv
+#shaper_freq_x = 0
+#shaper_type_y = mzv
+#shaper_freq_y = 0
+
+[respond]
+
+[exclude_object]
+
+
+[gcode_macro SAVE_PRINT_STATE]
+gcode:
+    {% set filepath = printer['virtual_sdcard'].file_path %}
+    {% set filename = filepath.split('/')[-1] %}
+    SAVE_VARIABLE VARIABLE=last_file VALUE="{filename}" PATH="/home/4DS/shell_variables.cfg"
+    SAVE_VARIABLE VARIABLE=power_resume_z VALUE={printer.gcode_move.position.z} PATH="/home/4DS/shell_variables.cfg"
+    SAVE_VARIABLE VARIABLE=was_interrupted VALUE=True PATH="/home/4DS/shell_variables.cfg"
+    M117 Saving print state...
+    
+[gcode_macro LOG_Z]
+gcode:
+    {% set z_pos = printer.gcode_move.gcode_position.z %}
+    SAVE_VARIABLE VARIABLE=power_resume_z VALUE={z_pos}
+    RESPOND MSG="Current Z position saved: {z_pos}"
+
+[gcode_macro REPORT_POSITION]
+gcode:
+    RESPOND MSG="Current X position: {printer.toolhead.position.x}"
+    RESPOND MSG="Current Y position: {printer.toolhead.position.y}"
+    RESPOND MSG="Current Z position: {printer.toolhead.position.z}"
+
+[gcode_macro RESUME_PRINT]
+gcode:
+    M104 S{saved_variables.extruder_temp} ; Set extruder temperature
+    M140 S{saved_variables.bed_temp}      ; Set bed temperature
+    M190 S{saved_variables.bed_temp}      ; Wait for bed to reach temperature
+    M109 S{saved_variables.extruder_temp} ; Wait for extruder to reach temperature
+    # Home X and Y axes
+    G28 X Y
+    # Move to the last known position
+    G1 X{saved_variables.last_x|default(0)} Y{saved_variables.last_y|default(0)} Z{saved_variables.last_z|default(0.2)} F3000
+    # Reset extruder position
+    G92 E{saved_variables.last_e|default(0)}
+    M117 Resuming print...
+    M24                   ; Resume the print
+
+[gcode_macro SAVE_POSITION]
+gcode:
+    GET_POSITION
+    # Save the kinematic (real-world) position
+    SAVE_VARIABLE VARIABLE=last_x VALUE={printer.toolhead.position.x}
+    SAVE_VARIABLE VARIABLE=last_y VALUE={printer.toolhead.position.y}
+    SAVE_VARIABLE VARIABLE=last_z VALUE={printer.toolhead.position.z}
+    SAVE_VARIABLE VARIABLE=last_e VALUE={printer.toolhead.position.e}
+    RESPOND MSG="Kinematic Position saved - X: {printer.toolhead.position.x}, Y: {printer.toolhead.position.y}, Z: {printer.toolhead.position.z}, E: {printer.toolhead.position.e}"
+
+[gcode_macro RESUME_FROM_POSITION]
+gcode:
+    {% set extruder_temp = printer.extruder.target|default(200) %}
+    {% set bed_temp = printer.heater_bed.target|default(60) %}
+    
+    M104 S{extruder_temp} ; Set extruder temperature
+    M140 S{bed_temp}      ; Set bed temperature
+    M190 S{bed_temp}      ; Wait for bed to reach temperature
+    M109 S{extruder_temp} ; Wait for extruder to reach temperature
+    G28 X Y               ; Home X and Y axes
+    # Move to the last known kinematic position
+    G1 X{printer.save_variables.variables.last_x|default(0)} Y{printer.save_variables.variables.last_y|default(0)} Z{printer.save_variables.variables.last_z|default(0.2)} F3000
+    G92 E{printer.save_variables.variables.last_e|default(0)} ; Reset extruder position
+    M117 Resuming print...
+    M24                   ; Resume the print
+
+[gcode_macro REPORT_SAVED_POSITION]
+gcode:
+    RESPOND MSG="Saved Position - X: {printer.save_variables.variables.last_x}, Y: {printer.save_variables.variables.last_y}, Z: {printer.save_variables.variables.last_z}, E: {printer.save_variables.variables.last_e}"
+
+[gcode_macro LOAD_SAVED_VARIABLES]
+gcode:
+    LOAD_VARIABLE NAME=last_x PATH="/home/4DS/variable.cfg"
+    LOAD_VARIABLE NAME=last_y PATH="/home/4DS/variable.cfg"
+    LOAD_VARIABLE NAME=last_z PATH="/home/4DS/variable.cfg"
+    LOAD_VARIABLE NAME=last_e PATH="/home/4DS/variable.cfg"
+    RESPOND MSG="Loaded Variables: X: {last_x}, Y: {last_y}, Z: {last_z}, E: {last_e}"
+
+[gcode_shell_command POWER_LOSS_RESUME]
+command: /home/4DS/resume_print.sh
+timeout: 5.
+#    verbose: True
+    
+[gcode_macro RESUME_PRINT]
+gcode:
+  RUN_SHELL_COMMAND "/home/4DS/resume_print.sh"
+
+[gcode_macro CLEAR_STATE]
+gcode:
+  SAVE_VARIABLE VARIABLE=last_x VALUE=None
+  SAVE_VARIABLE VARIABLE=last_y VALUE=None
+  SAVE_VARIABLE VARIABLE=last_z VALUE=None
+  SAVE_VARIABLE VARIABLE=last_e VALUE=None
+  {action_respond_info("Print state cleared.")}
+
+#[mcu pi]
+#serial: /tmp/klipper_host_mcu
+
+#[gcode_macro T0]
+#gcode:
+   # ACTIVATE_EXTRUDER EXTRUDER=extruder
+   
+#[gcode_macro T1]
+#gcode:
+   # ACTIVATE_EXTRUDER EXTRUDER=extruder1
+
+[gcode_macro T0]
+gcode:
+  SET_GCODE_OFFSET X=0 Y=0 Z=0
+    ACTIVATE_EXTRUDER EXTRUDER=extruder
+    SET_GCODE_VARIABLE MACRO=FAN_VARIABLE VARIABLE=active_fan VALUE=0
+
+[gcode_macro T1]
+gcode:
+  SET_GCODE_OFFSET X=-46.3 Y=0.0 Z=0
+    ACTIVATE_EXTRUDER EXTRUDER=extruder1
+    SET_GCODE_VARIABLE MACRO=FAN_VARIABLE VARIABLE=active_fan VALUE=1
+    
+[gcode_macro PRINT_START]         
+gcode:
+    SAVE_VARIABLE VARIABLE=was_interrupted VALUE=True
+    
+[gcode_macro PRINT_END]
+gcode:
+    SAVE_VARIABLE VARIABLE=was_interrupted VALUE=False
+    SET_LED LED=my_neopixel RED=0.5 GREEN=0.5 BLUE=0.5
+    
+[delayed_gcode KINEMATIC_POSITION]
+initial_duration:0.2
+gcode:
+      SET_KINEMATIC_POSITION X=110
+      SET_KINEMATIC_POSITION Y=110
+      SET_KINEMATIC_POSITION Z=0
+      
+[force_move]
+enable_force_move : true
+
+# Driver0
+[stepper_x]
+step_pin: PF13
+dir_pin: PF12
+enable_pin: !PF14
+microsteps: 64
+rotation_distance: 39.947
+endstop_pin: PG6
+position_endstop: -48
+position_min:-48
+position_max: 565
+homing_speed: 80
+
+[tmc2209 stepper_x]
+uart_pin: PC4
+interpolate: false
+run_current: 1.40
+stealthchop_threshold: 999
+
+# Driver1
+[stepper_y]
+step_pin: PG0
+dir_pin: PG1
+enable_pin: !PF15
+microsteps: 64
+rotation_distance: 39.947
+endstop_pin: PG9
+position_endstop:0
+position_min:0
+position_max: 610
+homing_speed: 80
+
+[tmc2209 stepper_y]
+uart_pin: PD11
+interpolate: false
+run_current: 1.20
+stealthchop_threshold: 000
+
+# Driver2
+[stepper_z]
+step_pin: PF11
+dir_pin: PG3
+enable_pin: !PG5
+microsteps: 64
+rotation_distance: 4
+step_pulse_duration: 0.00002
+#0.00002  
+endstop_pin: probe: z_virtual_endstop
+
+#position_endstop: 0
+position_max: 500
+position_min: -5
+homing_speed: 5
+
+# Driver3
+[stepper_z1]
+step_pin: PG4
+dir_pin: PC1
+enable_pin: !PA0
+#endstop_pin: PG10
+microsteps: 64
+rotation_distance: 4
+step_pulse_duration: 0.00002
+#0.00002
+
+[z_tilt]
+z_positions:
+    20, 300
+    450, 300
+points:
+    20, 300
+    450, 300
+speed: 120
+horizontal_move_z: 5
+retries: 8
+retry_tolerance: 0.010
+
+
+[safe_z_home]
+home_xy_position: 227, 250 # Change coordinates to the center of your print bed
+speed: 80
+z_hop: 10                 # Move up 10mm
+z_hop_speed: 5
+
+[gcode_button emergency_stop]
+pin: PG10                 # Replace with your actual endstop pin
+press_gcode:
+    { action_emergency_stop("Emergency stop triggered") }
+
+            
+# Driver4
+[extruder]
+step_pin: PF9
+dir_pin: PF10
+enable_pin: !PG2
+full_steps_per_rotation: 100
+microsteps: 32
+rotation_distance: 4
+#gear_ratio: 1:5 
+nozzle_diameter: 0.4
+filament_diameter: 1.750
+max_extrude_only_distance: 10000
+max_extrude_cross_section: 10000.0
+heater_pin: PA2 # HE0
+sensor_type: t_500
+sensor_pin: PF4 #PT100 on Board Pin
+#control: pid
+#pid_Kp: 22.2
+#pid_Ki: 1.08
+#pid_Kd: 114
+min_temp:-57
+max_temp:500
+min_extrude_temp: 0
+pressure_advance: 0.055
+
+
+[verify_heater extruder]
+max_error: 10
+check_gain_time:180
+hysteresis: 5
+heating_gain: 1
+
+
+[tmc2209 extruder]
+uart_pin: PF2
+interpolate: false
+run_current: 1.1
+stealthchop_threshold: 9999
+
+[extruder1]
+step_pin: PC13
+dir_pin: PF0
+enable_pin: !PF1
+microsteps: 32
+full_steps_per_rotation: 100
+rotation_distance: 4
+nozzle_diameter: 0.400
+filament_diameter: 1.750
+max_extrude_only_distance: 1000
+heater_pin: PA3 #H1
+sensor_type: t_500
+sensor_pin: PF5
+#control: pid
+#pid_Kp: 22.2
+#pid_Ki: 1.08
+#pid_Kd: 114
+min_temp: -57
+#min_extrude_temp:0
+max_temp: 450
+min_extrude_temp: 0
+pressure_advance: 0.055
+
+[tmc2209 extruder1]
+uart_pin: PE4
+interpolate: false
+run_current: 1.1
+stealthchop_threshold: 9999
+
+
+[verify_heater extruder1]
+max_error: 10
+check_gain_time:180
+hysteresis: 5
+heating_gain: 1
+
+[thermistor t_500]
+temperature1: 25
+resistance1: 2300000  # 4.7M ohms at 25°C
+temperature2: 260
+resistance2:  2228
+temperature3: 460
+resistance3:  131.6
+
+[neopixel my_neopixel]
+pin: PB0                   # Replace with the GPIO pin connected to Neopixel DIN
+chain_count: 2            # Total number of LEDs in the chain
+color_order: GRB         # Set to GRB for most Neopixels        
+initial_RED: 0.0        # Initial red value
+initial_GREEN: 0.0      # Initial green value
+initial_BLUE: 0.5            # Initial blue value 
+
+[gcode_macro LED_IDLE]
+gcode:
+  SET_LED LED=my_neopixel RED=0.0 GREEN=0.0 BLUE=0.5
+
+[gcode_macro LED_PRINTING]
+gcode:
+  SET_LED LED=my_neopixel RED=0.0 GREEN=0.5 BLUE=0.0
+
+[gcode_macro LED_ERROR]
+gcode:
+  SET_LED LED=my_neopixel RED=0.5 GREEN=0.0 BLUE=0.5
+  
+[heater_fan fan0]
+pin: PD13
+max_power: 1
+kick_start_time: 0.5
+heater: extruder
+heater_temp: 50.0
+fan_speed: 1
+
+[heater_fan fan1]
+pin: PD14
+max_power: 1
+kick_start_time: 0.5
+heater: extruder1
+heater_temp: 50.0
+fan_speed: 1
+
+[fan_generic fan]
+pin: PA8
+cycle_time: 0.0100
+#hardware_pwm: True
+kick_start_time: 1.00
+
+[fan_generic fan1]
+pin: PE5
+cycle_time: 0.0100
+#hardware_pwm: True
+kick_start_time: 1.000
+
+[fan_generic fan2]
+pin: PD12
+max_power: 1.0
+shutdown_speed: 0
+kick_start_time: 0.5
+
+[gcode_macro FAN_VARIABLE]
+gcode:
+variable_active_fan: 0
+#--- Carriages print cooling FANs ---
+variable_fan: 'fan'    # carriage X1
+variable_fan1: 'fan1'   # carriage X2
+#--- Other user define FANs ---
+variable_fan2: 'fan2'    
+variable_fan3: 'fan3'
+variable_fan4: 'fan4'  
+variable_fan5: 'fan5'
+
+##########################################################
+# PRINTER FANS MANAGEMENT
+# Redefine G-code command M106 and M107
+##########################################################
+
+[gcode_macro M106]
+description: Override "M106" to allow multiple extruders.
+gcode:
+    {% set fan_vars = printer["gcode_macro FAN_VARIABLE"] %}
+    {% set raw_speed = params.S|default(0)|float %}
+    {% set fan_speed = (raw_speed / 255.0)|round(2) %}    
+       
+    {% set target_fan = params.P|default(fan_vars.active_fan)|int %}
+    {% set default_fan = ('fan', 'fan1', 'fan2', 'fan3', 'fan4', 'fan5')[target_fan] %}    
+   
+    {% if target_fan in [0,1] %}
+       ### carriages print cooling FAN  
+        CARRIAGE_PRINT_FAN SPEED={fan_speed}
+    {% else %}
+       ### other user define FAN
+        SET_FAN_SPEED FAN={default_fan} SPEED={fan_speed}
+    {% endif %}
+
+[gcode_macro M107]
+description: Override "M107" to allow multiple extruders.
+gcode:
+    M106 S0
+[gcode_macro CARRIAGE_PRINT_FAN]
+description: Set automatically the print fan speed for dual carriages modes 
+gcode:
+    {% set fan_vars = printer["gcode_macro FAN_VARIABLE"] %}      
+    
+    {% if params.SPEED is defined %}
+        {% set fan_speed = params.SPEED|float %}
+    {% else %}
+        ### read print fan speed from active carriage/extruder
+        {% set fan_speed = printer["fan_generic " + fan_vars.fan].speed|float %}
+        {% set fan1_speed = printer["fan_generic " + fan_vars.fan1].speed|float %}
+        {% set fan_speed = [fan_speed, fan1_speed]|max %}
+    {% endif %}
+        
+    {% if fan_vars.active_fan == 0 %}
+        ### FAN on carriage X1
+        SET_FAN_SPEED FAN={fan_vars.fan} SPEED={fan_speed}
+        SET_FAN_SPEED FAN={fan_vars.fan1} SPEED=0
+    {% elif fan_vars.active_fan == 1 %}
+        ### FAN on carriage X2
+        SET_FAN_SPEED FAN={fan_vars.fan} SPEED=0
+        SET_FAN_SPEED FAN={fan_vars.fan1} SPEED={fan_speed}
+    {% endif %}
+
+[gcode_macro LOAD_FILAMENT]
+variable_load_distance:  20
+variable_purge_distance:  25
+gcode:
+    {% set speed = params.SPEED|default(300) %}
+    {% set max_velocity = printer.configfile.settings['extruder'].max_extrude_only_velocity  * 10 %}
+    SAVE_GCODE_STATE NAME=load_state
+    G91
+    G92 E0
+    G1 Z10 F600
+    G1 E{load_distance} F{max_velocity} # fast-load
+    G1 E{purge_distance} F{speed} # purge
+    G1 Z-10 F600
+    RESTORE_GCODE_STATE NAME=load_state               # Put the extruder back into absolute mode.
+
+[gcode_macro UNLOAD_FILAMENT]
+variable_unload_distance:  40
+variable_purge_distance:  10
+gcode:
+    {% set speed = params.SPEED|default(300) %}
+    {% set max_velocity = printer.configfile.settings['extruder'].max_extrude_only_velocity  * 15 %}
+    SAVE_GCODE_STATE NAME=unload_state
+    G91
+    G1 Z10 F600
+    G92 E0
+    G1 E{purge_distance} F{speed} # purge
+    G1 E-{unload_distance} F{max_velocity} # fast-unload
+    G1 Z-10 F600
+    RESTORE_GCODE_STATE NAME=unload_state
+
+[gcode_macro PAUSE]
+description: Pause the actual running print
+rename_existing: PAUSE_BASE
+gcode:
+  PAUSE_BASE
+  _TOOLHEAD_PARK_PAUSE_CANCEL
+   SET_LED LED=my_neopixel RED=0.5 GREEN=0.5 BLUE=0.0
+
+[gcode_macro RESUME]
+description: Resume the actual running print
+rename_existing: RESUME_BASE
+gcode:
+  ##### read extrude from  _TOOLHEAD_PARK_PAUSE_CANCEL  macro #####
+   SET_LED LED=my_neopixel RED=0.0 GREEN=0.5 BLUE=0.0
+  {% set extrude = printer['gcode_macro _TOOLHEAD_PARK_PAUSE_CANCEL'].extrude %}
+  #### get VELOCITY parameter if specified ####
+  {% if 'VELOCITY' in params|upper %}
+    {% set get_params = ('VELOCITY=' + params.VELOCITY)  %}
+  {%else %}
+    {% set get_params = "" %}
+  {% endif %}
+  ##### end of definitions #####
+  {% if printer.extruder.can_extrude|lower == 'true' %}
+    M83
+    G1 E{extrude} F2100
+    {% if printer.gcode_move.absolute_extrude |lower == 'true' %} M82 {% endif %}
+  {% else %}
+    {action_respond_info("Extruder not hot enough")}
+  {% endif %}
+
+  RESUME_BASE {get_params}
+
+[gcode_macro _TOOLHEAD_PARK_PAUSE_CANCEL]
+description: Helper: park toolhead used in PAUSE and CANCEL_PRINT
+variable_extrude: 1.0
+gcode:
+  ##### Set park position for X and Y when PAUSED #####
+  {% set x_park = 5.0 %}
+  {% set y_park = 5.0 %}
+  {% set z_park_delta = 2.0 %}
+  
+  ##### calculate save lift position #####
+  {% set max_z = printer.toolhead.axis_maximum.z|float %}
+  {% set act_z = printer.toolhead.position.z|float %}
+  {% if act_z < (max_z - z_park_delta) %}
+    {% set z_safe = z_park_delta %}
+  {% else %}
+    {% set z_safe = max_z - act_z %}
+  {% endif %}
+  ##### end of definitions #####
+  {% if printer.extruder.can_extrude|lower == 'true' %}
+    M83
+    G1 E-{extrude} F2100
+    {% if printer.gcode_move.absolute_extrude |lower == 'true' %} M82 {% endif %}
+  {% else %}
+    {action_respond_info("Extruder not hot enough")}
+  {% endif %}
+  {% if "xyz" in printer.toolhead.homed_axes %}
+    G91
+    G1 Z{z_safe} F900
+    G90
+    G1 X{x_park} Y{y_park} F6000
+    {% if printer.gcode_move.absolute_coordinates|lower == 'false' %} G91 {% endif %}
+  {% else %}
+    {action_respond_info("Printer not homed")}
+  {% endif %}
+  
+[gcode_macro CANCEL_PRINT]
+description: Cancel the actual running print
+rename_existing: CANCEL_PRINT_BASE
+variable_park: True
+gcode:
+  SET_LED LED=my_neopixel RED=0.5 GREEN=0.0 BLUE=0.0
+  ## Move head and retract only if not already in the pause state and park set to true
+  {% if printer.pause_resume.is_paused|lower == 'false' and park|lower == 'true' %}
+    _TOOLHEAD_PARK_PAUSE_CANCEL
+  {% endif %}
+  
+  TURN_OFF_HEATERS  ; Turn off heaters before homing
+  G28 X Y  ; Home X and Y axes after canceling print
+  CANCEL_PRINT_BASE
+
+#[filament_switch_sensor RUNOUT]
+#switch_pin: PG12
+#pause_on_runout: True
+#runout_gcode: {action_respond_info("RUNOUT: T0 Filament runout")}
+#insert_gcode: {action_respond_info("RUNOUT: T0 Filament inserted")}
+#event_delay: 3.0
+#pause_delay: 0.5
+
+#[filament_switch_sensor RUNOUT1]
+#switch_pin: PG13
+#pause_on_runout: True
+#runout_gcode: {action_respond_info("RUNOUT: T1 Filament runout")}
+#insert_gcode: {action_respond_info("RUNOUT: T1 Filament inserted")}
+#event_delay: 3.0
+#pause_delay: 0.5
+
+
+[gcode_macro SET_FILAMENT_SENSOR]
+description: Sets the filament sensor on/off and save value to file
+rename_existing: SET_FILAMENT_SENSOR_BASE
+gcode:
+  {% if printer.save_variables.variables.filament_sensor is not defined %}
+    {% set filament_sensor = {params.SENSOR|string: params.ENABLE|int} %}
+  {% else %}
+    {% set filament_sensor = printer.save_variables.variables.filament_sensor %}
+    {% set _dummy = filament_sensor.update({params.SENSOR|string: params.ENABLE|int}) %}
+  {% endif %}
+  SET_FILAMENT_SENSOR_BASE SENSOR={params.SENSOR} ENABLE={params.ENABLE}
+  SAVE_VARIABLE VARIABLE=filament_sensor VALUE="{filament_sensor}"
+
+[gcode_macro _RESTORE_FILAMENT_SENSOR]
+description: Restore the filament sensor on/off state at klipper start
+gcode:
+  {% if printer.save_variables.variables.filament_sensor is defined %}
+    {% for sensor in printer.save_variables.variables.filament_sensor %}
+       SET_FILAMENT_SENSOR_BASE SENSOR={sensor} ENABLE={printer.save_variables.variables.filament_sensor[sensor]}
+    {% endfor %}
+  {% endif %}
+
+#Auto Shut Down after Printing
+[output_pin power]
+pin: PE11
+pwm: False
+value: 1
+shutdown_value:0
+
+[gcode_macro POWER_OFF]
+description: Power Off
+gcode:
+  SET_PIN PIN=power VALUE=0
+
+[gcode_macro SHUTDOWN]
+gcode:
+ M81
+ {action_call_remote_method("shutdown_machine")}
+
+[gcode_macro REBOOT]
+gcode:
+ {action_call_remote_method("reboot_machine")}
+ 
+[gcode_macro IDLE_SHUTDOWN]
+gcode:
+    M117 Printer idle, shutting down...
+    TURN_OFF_HEATERS
+    M84
+    POWER_OFF
+
+[idle_timeout]
+timeout: 1800
+gcode: IDLE_SHUTDOWN
+
+[display_status]
+
+[pause_resume]  
+ 
+[virtual_sdcard]
+path: ~/printer_data/gcodes
+
+ 
+[heater_bed]
+heater_pin: PA1
+sensor_pin: PF3 # TB
+sensor_type: EPCOS 100K B57560G104F
+#control: watermark
+max_power: 1.0   # or whatever is safe for your hotend
+min_temp: 0
+max_temp: 140
+
+[verify_heater heater_bed]
+max_error: 120
+check_gain_time:180
+hysteresis: 5
+heating_gain: 2
+
+
+[heater_generic chamber]
+heater_pin: PB10
+max_power: 1.0
+sensor_type: EPCOS 100K B57560G104F
+sensor_pin: PF6
+control: watermark
+max_delta: 1.0
+min_temp: 0
+max_temp: 60
+gcode_id: C
+
+[verify_heater chamber]
+max_error: 400
+check_gain_time: 1800
+hysteresis: 5
+heating_gain: 0.1
+
+
+[gcode_macro M141]
+gcode:
+   SET_HEATER_TEMPERATURE HEATER=chamber TARGET={params.S}
+[mcu]
+serial:/dev/serial/by-id/usb-Klipper_stm32f446xx_550051000451313031393839-if00
+
+
+
+[printer]
+kinematics: corexy
+max_velocity: 350
+max_accel: 2300
+max_z_velocity: 5
+max_z_accel: 100
+minimum_cruise_ratio: 0.5
+square_corner_velocity: 5.0
+
+
+[gcode_macro SET_ACCEL_INFILL]
+gcode:
+    SET_VELOCITY_LIMIT ACCEL=3000  # High acceleration for faster infill
+
+[gcode_macro SET_ACCEL_OUTER_WALL]
+gcode:
+    SET_VELOCITY_LIMIT ACCEL=500  # Low acceleration for higher-quality outer walls
+
+[gcode_macro SET_ACCEL_INNER_WALL]
+gcode:
+   SET_VELOCITY_LIMIT ACCEL=1500  # Moderate acceleration for inner walls
+   
+[output_pin probe_enable]
+pin: PB6  # Set to the control pin on your board
+value: 0
+
+[probe]
+pin: ^!PB7 # NOTE FOR V2 users: Set this to ^!PC14 to set the low level trigger
+deactivate_on_each_sample: False
+x_offset: 20
+y_offset: -40
+#z_offset: 0  # Will be overridden when you do a PROBE_CALIBRATE
+samples: 2
+samples_tolerance: 0.05
+samples_tolerance_retries: 3
+activate_gcode:
+    PROBE_DEPLOY
+    G4 P500
+deactivate_gcode:
+    PROBE_STOW
+    
+[gcode_macro PROBE_DEPLOY]
+gcode:
+    SET_PIN PIN=probe_enable VALUE=1
+
+[gcode_macro PROBE_STOW]
+gcode:
+    SET_PIN PIN=probe_enable VALUE=0
+
+
+    
+#[bltouch]
+#sensor_pin: ^PB7             # Connect to Z-Stop pin
+#control_pin: PB6            # Connect to servo pin
+#x_offset: 36                   # Adjust if probe is offset from nozzle
+#y_offset: 8
+#z_offset: 0                   # Adjust after calibration
+#speed: 5.0
+#samples: 3
+#sample_retract_dist: 2.0
+#probe_with_touch_mode: true  
+
+[bed_mesh]
+speed: 120
+horizontal_move_z: 4
+mesh_min: 0, 10 #5, 8
+mesh_max: 500, 480 
+probe_count: 5, 5
+
+[bed_screws]
+screw1: 40, 40
+screw2: 460, 40
+screw3: 460, 460
+screw4: 40,460
+
+[gcode_macro SHUTDOWN]
+variable_printer_active: 0
+variable_wants_shutdown: 0
+gcode:
+  {action_call_remote_method("shutdown_machine")}
+
+[gcode_macro CONDITIONAL_SHUTDOWN]
+gcode:
+  {% if printer["gcode_macro SHUTDOWN"].wants_shutdown == 1 %}
+    SHOW_MSG MSG="Conditional shutdown wants shutdown, waiting for cooling down then i will shutdown"
+    M140 S0 ; start heating the bed to what is set in Cura
+    M104 S0 T0 ; start heating T0 to what is set in Cura
+    TEMPERATURE_WAIT SENSOR="extruder" MAXIMUM=60
+    SHUTDOWN
+  {% endif %}
+
+[gcode_macro GET_COMPLETE_SHUTDOWN]
+gcode:
+  {% set shutdown_wanted = printer["gcode_macro SHUTDOWN"].wants_shutdown %}
+  SHOW_MSG MSG="Cmpl shutd: {shutdown_wanted}"
+
+[gcode_macro SET_COMPLETE_SHUTDOWN]
+gcode:
+  {% set wants_shutdown = params.ENABLE|default(1)|int %}
+  {% if wants_shutdown >= 1 %}
+    {% set wants_shutdown = 1 %}
+    SHOW_MSG MSG="print cmpl->shutdown"
+  {% else %}
+    SHOW_MSG MSG="print cmpl->stay on"
+  {% endif %}
+  SET_GCODE_VARIABLE MACRO=SHUTDOWN VARIABLE=wants_shutdown VALUE={wants_shutdown}
+
+[gcode_macro SAFE_SHUTDOWN]
+gcode:
+  {% if printer_active == 0 %}
+  SHOW_MSG MSG="Performing safe shutdown"
+  SHUTDOWN
+  {% else %}
+  SHOW_MSG MSG="Job is active. No shutdown!"
+  {% endif %}
+
+[temperature_sensor raspberry_pi]
+sensor_type: temperature_host
+min_temp: 10
+max_temp: 100
+
+
+[temperature_sensor Controller_MCU]
+sensor_type: temperature_mcu
+min_temp: 0
+max_temp: 100
+
+#*# <---------------------- SAVE_CONFIG ---------------------->
+#*# DO NOT EDIT THIS BLOCK OR BELOW. The contents are auto-generated.
+#*#
+#*# [probe]
+#*# z_offset = 1.620
+#*#
+#*# [extruder1]
+#*# control = pid
+#*# pid_kp = 20.817
+#*# pid_ki = 0.746
+#*# pid_kd = 145.201
+#*#
+#*# [extruder]
+#*# control = pid
+#*# pid_kp = 18.923
+#*# pid_ki = 0.830
+#*# pid_kd = 107.858
+#*#
+#*# [input_shaper]
+#*# shaper_type_x = zv
+#*# shaper_freq_x = 41.8
+#*# shaper_type_y = zv
+#*# shaper_freq_y = 26.0
+#*#
+#*# [bed_mesh default]
+#*# version = 1
+#*# points =
+#*# 	0.009585, -0.052759, -0.258384, -0.369165, -0.603228
+#*# 	0.091147, 0.088335, -0.088540, -0.132759, -0.264790
+#*# 	-0.034790, 0.020835, -0.073853, -0.003384, -0.041821
+#*# 	-0.124634, -0.011196, -0.016353, 0.145835, 0.216929
+#*# 	-0.426509, -0.221978, -0.220103, 0.005366, 0.200522
+#*# x_count = 5
+#*# y_count = 5
+#*# mesh_x_pps = 2
+#*# mesh_y_pps = 2
+#*# algo = lagrange
+#*# tension = 0.2
+#*# min_x = 0.0
+#*# max_x = 500.0
+#*# min_y = 10.0
+#*# max_y = 480.0
+#*#
+#*# [heater_bed]
+#*# control = pid
+#*# pid_kp = 68.060
+#*# pid_ki = 2.623
+#*# pid_kd = 441.539
